@@ -1,0 +1,45 @@
+DirectoryIndex disabled
+DirectorySlash Off
+
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Tell Apache the request is HTTPS when Cloudways LB says so
+    # (mod_dir uses this when building any auto-redirect URL)
+    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+
+    # Force HTTPS at .htaccess level too
+    RewriteCond %{HTTP:X-Forwarded-Proto} =http
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Strip trailing slash (force redirect to clean URL, except root)
+    RewriteCond %{REQUEST_URI} ^/(.+)/$
+    RewriteCond %{REQUEST_URI} !^/api/
+    RewriteRule ^ https://%{HTTP_HOST}/%1 [L,R=301]
+
+    # API routes -> Laravel
+    RewriteRule ^api/ index.php [L]
+    RewriteRule ^api$ index.php [L]
+
+    # Serve .html for clean URLs (Next.js static export)
+    # /dashboard/tasks -> /dashboard/tasks.html
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{DOCUMENT_ROOT}/%{REQUEST_URI}.html -f
+    RewriteRule ^(.+)$ /$1.html [L]
+
+    # Send everything else to Laravel front controller (SPA fallback)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
