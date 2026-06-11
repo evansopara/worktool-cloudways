@@ -60,6 +60,12 @@ class ProjectController extends Controller
             );
         }
 
+        // Auto-add the creator as a project member
+        ProjectMember::firstOrCreate(
+            ['project_id' => $project->id, 'user_id' => $request->user()->id],
+            ['invitation_status' => 'accepted']
+        );
+
         return response()->json($project->load(['client', 'manager', 'creator', 'members.user']), 201);
     }
 
