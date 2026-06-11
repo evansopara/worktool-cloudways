@@ -204,7 +204,7 @@ class AuthController extends Controller
         // memo recipients, mentions, etc. Sensitive fields are hidden by the
         // User model's $hidden array.
         $users = User::where('is_active', 1)
-            ->orderBy('name', 'asc')
+            ->orderBy('first_name', 'asc')
             ->get();
         return response()->json($users);
     }

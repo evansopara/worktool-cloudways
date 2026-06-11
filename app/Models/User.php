@@ -40,6 +40,7 @@ class User extends Authenticatable
     public function getFirstNameAttribute($value)
     {
         if ($value) return $value;
+        if (!empty($this->attributes['first_name'])) return $this->attributes['first_name'];
         $parts = explode(' ', $this->attributes['name'] ?? '', 2);
         return $parts[0] ?? '';
     }
@@ -47,6 +48,7 @@ class User extends Authenticatable
     public function getLastNameAttribute($value)
     {
         if ($value) return $value;
+        if (!empty($this->attributes['last_name'])) return $this->attributes['last_name'];
         $parts = explode(' ', $this->attributes['name'] ?? '', 2);
         return $parts[1] ?? '';
     }
