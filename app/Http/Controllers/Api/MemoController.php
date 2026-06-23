@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoRead;
 use App\Models\MemoResponse;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 
 class MemoController extends Controller
@@ -35,6 +36,20 @@ class MemoController extends Controller
         $data['sender_id'] = $request->user()->id;
 
         $memo = Memo::create($data);
+
+        foreach ($memo->recipients as $recipientId) {
+            if ($recipientId !== $request->user()->id) {
+                Notification::create([
+                    'user_id'        => $recipientId,
+                    'type'           => 'memo_received',
+                    'title'          => 'New Memo',
+                    'message'        => "You received a memo: \"{$memo->subject}\"",
+                    'reference_id'   => $memo->id,
+                    'reference_type' => 'memo',
+                ]);
+            }
+        }
+
         return response()->json($memo->load(['sender', 'reads', 'responses']), 201);
     }
 
@@ -72,6 +87,17 @@ class MemoController extends Controller
             'user_id' => $request->user()->id,
             'content' => $data['content'],
         ]);
+
+        if ($memo->sender_id !== $request->user()->id) {
+            Notification::create([
+                'user_id'        => $memo->sender_id,
+                'type'           => 'memo_response',
+                'title'          => 'Memo Response Received',
+                'message'        => "{$request->user()->name} responded to your memo: \"{$memo->subject}\"",
+                'reference_id'   => $memo->id,
+                'reference_type' => 'memo',
+            ]);
+        }
 
         return response()->json($response->load('user'), 201);
     }
