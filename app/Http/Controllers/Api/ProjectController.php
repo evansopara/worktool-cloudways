@@ -10,6 +10,7 @@ use App\Models\Deliverable;
 use App\Models\Resource;
 use App\Models\ProjectBriefing;
 use App\Models\ClientSentiment;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 
 class ProjectController extends Controller
@@ -122,6 +123,17 @@ class ProjectController extends Controller
             ['project_id' => $project->id, 'user_id' => $data['user_id']],
             ['role' => $data['role'] ?? null, 'invitation_status' => 'accepted']
         );
+
+        if ($data['user_id'] !== $request->user()->id) {
+            Notification::create([
+                'user_id'        => $data['user_id'],
+                'type'           => 'project_member_added',
+                'title'          => 'Added to Project',
+                'message'        => "You have been added to the project: \"{$project->name}\"",
+                'reference_id'   => $project->id,
+                'reference_type' => 'project',
+            ]);
+        }
 
         return response()->json($member->load('user'), 201);
     }

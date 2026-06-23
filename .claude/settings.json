@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/HP/Documents/GitHub/frontend/**)",
+      "Bash(rm \"/c/Users/HP/Documents/GitHub/frontend/src/app/dashboard/projects/[id]/ProjectDetailClient.tsx\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\components\\layout",
+      "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\app\\dashboard\\admin",
+      "C:\\Users\\HP\\Documents\\GitHub\\frontend",
+      "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\app\\dashboard\\projects\\[id]"
+    ]
+  }
+}

@@ -14,6 +14,7 @@ use App\Models\SopSegment;
 use App\Models\IssueReport;
 use App\Models\ReviewLink;
 use App\Models\Note;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 
 class SimpleController extends Controller
@@ -57,6 +58,17 @@ class SimpleController extends Controller
         $data['reviewed_at'] = now();
 
         $leave->update($data);
+
+        $label = $data['status'] === 'approved' ? 'Approved' : 'Rejected';
+        Notification::create([
+            'user_id'        => $leave->user_id,
+            'type'           => 'leave_decided',
+            'title'          => "Leave Application {$label}",
+            'message'        => "Your leave request ({$leave->start_date} – {$leave->end_date}) was {$data['status']}.",
+            'reference_id'   => $leave->id,
+            'reference_type' => 'leave_application',
+        ]);
+
         return response()->json($leave->load(['user', 'reviewer']));
     }
 
@@ -134,12 +146,26 @@ class SimpleController extends Controller
 
     public function supportUpdate(Request $request, TechnicalSupportRequest $support)
     {
-        $support->update($request->validate([
+        $data = $request->validate([
             'status' => 'sometimes|string',
             'assigned_to_id' => 'nullable|integer|exists:users,id',
             'resolution' => 'nullable|string',
             'resolved_at' => 'nullable|date',
-        ]));
+        ]);
+        $support->update($data);
+
+        if ($support->requester_id && $support->requester_id !== $request->user()->id) {
+            $status = $data['status'] ?? $support->status;
+            Notification::create([
+                'user_id'        => $support->requester_id,
+                'type'           => 'support_updated',
+                'title'          => 'Support Request Updated',
+                'message'        => "Your technical support request \"{$support->title}\" is now {$status}.",
+                'reference_id'   => $support->id,
+                'reference_type' => 'technical_support_request',
+            ]);
+        }
+
         return response()->json($support->load(['requester', 'assignedTo']));
     }
 
@@ -180,12 +206,26 @@ class SimpleController extends Controller
     public function complaintUpdate(Request $request, Complaint $complaint)
     {
         $this->authorizeRole($request, ['operations_manager', 'team_lead', 'customer_support_officer']);
-        $complaint->update($request->validate([
+        $data = $request->validate([
             'status' => 'sometimes|string',
             'review_comments' => 'nullable|string',
             'reviewed_by' => 'nullable|integer',
             'reviewed_at' => 'nullable|date',
-        ]));
+        ]);
+        $complaint->update($data);
+
+        if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
+            $status = $data['status'] ?? $complaint->status;
+            Notification::create([
+                'user_id'        => $complaint->submitter_id,
+                'type'           => 'complaint_updated',
+                'title'          => 'Complaint Updated',
+                'message'        => "Your complaint status has been updated to: {$status}.",
+                'reference_id'   => $complaint->id,
+                'reference_type' => 'complaint',
+            ]);
+        }
+
         return response()->json($complaint);
     }
 
@@ -221,11 +261,25 @@ class SimpleController extends Controller
     public function staffComplaintUpdate(Request $request, StaffComplaint $complaint)
     {
         $this->authorizeRole($request, ['operations_manager', 'team_lead']);
-        $complaint->update($request->validate([
+        $data = $request->validate([
             'status' => 'sometimes|string',
             'review_comments' => 'nullable|string',
             'reviewed_at' => 'nullable|date',
-        ]));
+        ]);
+        $complaint->update($data);
+
+        if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
+            $status = $data['status'] ?? $complaint->status;
+            Notification::create([
+                'user_id'        => $complaint->submitter_id,
+                'type'           => 'staff_complaint_updated',
+                'title'          => 'Staff Complaint Updated',
+                'message'        => "Your staff complaint status has been updated to: {$status}.",
+                'reference_id'   => $complaint->id,
+                'reference_type' => 'staff_complaint',
+            ]);
+        }
+
         return response()->json($complaint);
     }
 
@@ -263,6 +317,18 @@ class SimpleController extends Controller
             'responded_at' => now(),
             'status' => 'resolved',
         ]);
+
+        if ($staffQuery->submitted_by && $staffQuery->submitted_by !== $request->user()->id) {
+            Notification::create([
+                'user_id'        => $staffQuery->submitted_by,
+                'type'           => 'query_answered',
+                'title'          => 'Query Answered',
+                'message'        => "Your query \"{$staffQuery->subject}\" has been answered.",
+                'reference_id'   => $staffQuery->id,
+                'reference_type' => 'staff_query',
+            ]);
+        }
+
         return response()->json($staffQuery);
     }
 
@@ -405,6 +471,18 @@ class SimpleController extends Controller
         $data['status'] = 'pending';
 
         $link = ReviewLink::create($data);
+
+        if (!empty($link->assigned_to) && $link->assigned_to !== $request->user()->id) {
+            Notification::create([
+                'user_id'        => $link->assigned_to,
+                'type'           => 'review_link_assigned',
+                'title'          => 'Review Link Assigned',
+                'message'        => "You have a new review link to review: \"{$link->title}\"",
+                'reference_id'   => $link->id,
+                'reference_type' => 'review_link',
+            ]);
+        }
+
         return response()->json($link->load(['sender', 'assignee']), 201);
     }
 
@@ -415,6 +493,18 @@ class SimpleController extends Controller
             'review_comment' => $request->validate(['review_comment' => 'nullable|string'])['review_comment'] ?? null,
             'reviewed_at' => now(),
         ]);
+
+        if ($reviewLink->sent_by && $reviewLink->sent_by !== $request->user()->id) {
+            Notification::create([
+                'user_id'        => $reviewLink->sent_by,
+                'type'           => 'review_link_reviewed',
+                'title'          => 'Review Link Reviewed',
+                'message'        => "Your review link \"{$reviewLink->title}\" has been reviewed.",
+                'reference_id'   => $reviewLink->id,
+                'reference_type' => 'review_link',
+            ]);
+        }
+
         return response()->json($reviewLink);
     }
 
