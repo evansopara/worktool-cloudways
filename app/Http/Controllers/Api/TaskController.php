@@ -7,7 +7,7 @@ use App\Models\Task;
 use App\Models\TaskSession;
 use App\Models\TaskIteration;
 use App\Models\DeadlineExtensionRequest;
-use App\Models\Notification;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -104,14 +104,14 @@ class TaskController extends Controller
         $task = Task::create($data);
 
         if (!empty($task->assignee_id) && $task->assignee_id !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $task->assignee_id,
-                'type'           => 'task_assigned',
-                'title'          => 'New Task Assigned',
-                'message'        => "You have been assigned the task: \"{$task->title}\"",
-                'reference_id'   => $task->id,
-                'reference_type' => 'task',
-            ]);
+            NotificationService::send(
+                $task->assignee_id,
+                'task_assigned',
+                'New Task Assigned',
+                "You have been assigned the task: \"{$task->title}\"",
+                $task->id,
+                'task',
+            );
         }
 
         return response()->json($task->load(['project', 'assignee', 'assigner']), 201);
@@ -150,24 +150,24 @@ class TaskController extends Controller
 
         if (isset($data['status']) && $data['status'] !== $oldStatus) {
             if ($data['status'] === 'not_approved' && $task->assignee_id) {
-                Notification::create([
-                    'user_id'        => $task->assignee_id,
-                    'type'           => 'task_not_approved',
-                    'title'          => 'Task Not Approved',
-                    'message'        => "Your task \"{$task->title}\" requires revision.",
-                    'reference_id'   => $task->id,
-                    'reference_type' => 'task',
-                ]);
+                NotificationService::send(
+                    $task->assignee_id,
+                    'task_not_approved',
+                    'Task Not Approved',
+                    "Your task \"{$task->title}\" requires revision.",
+                    $task->id,
+                    'task',
+                );
             }
             if ($data['status'] === 'completed' && $task->assignee_id) {
-                Notification::create([
-                    'user_id'        => $task->assignee_id,
-                    'type'           => 'task_completed',
-                    'title'          => 'Task Completed',
-                    'message'        => "Your task \"{$task->title}\" has been marked complete.",
-                    'reference_id'   => $task->id,
-                    'reference_type' => 'task',
-                ]);
+                NotificationService::send(
+                    $task->assignee_id,
+                    'task_completed',
+                    'Task Completed',
+                    "Your task \"{$task->title}\" has been marked complete.",
+                    $task->id,
+                    'task',
+                );
             }
         }
 
@@ -211,14 +211,14 @@ class TaskController extends Controller
 
         $task->load('project');
         if ($task->project && $task->project->manager_id && $task->project->manager_id !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $task->project->manager_id,
-                'type'           => 'task_review',
-                'title'          => 'Task Ready for Review',
-                'message'        => "{$request->user()->name} submitted \"{$task->title}\" for review.",
-                'reference_id'   => $task->id,
-                'reference_type' => 'task',
-            ]);
+            NotificationService::send(
+                $task->project->manager_id,
+                'task_review',
+                'Task Ready for Review',
+                "{$request->user()->name} submitted \"{$task->title}\" for review.",
+                $task->id,
+                'task',
+            );
         }
 
         return response()->json($task->fresh()->load(['project', 'assignee']));
@@ -343,14 +343,14 @@ class TaskController extends Controller
         $req = DeadlineExtensionRequest::create($data);
         $req->load(['task', 'requester']);
 
-        Notification::create([
-            'user_id'        => $data['project_manager_id'],
-            'type'           => 'deadline_extension_request',
-            'title'          => 'Deadline Extension Request',
-            'message'        => "{$request->user()->name} requested a deadline extension for task: \"{$req->task->title}\"",
-            'reference_id'   => $req->id,
-            'reference_type' => 'deadline_extension_request',
-        ]);
+        NotificationService::send(
+            $data['project_manager_id'],
+            'deadline_extension_request',
+            'Deadline Extension Request',
+            "{$request->user()->name} requested a deadline extension for task: \"{$req->task->title}\"",
+            $req->id,
+            'deadline_extension_request',
+        );
 
         return response()->json($req, 201);
     }
@@ -377,14 +377,14 @@ class TaskController extends Controller
 
         $extensionRequest->load(['task', 'requester']);
         $label = $data['status'] === 'approved' ? 'Approved' : 'Rejected';
-        Notification::create([
-            'user_id'        => $extensionRequest->requester_id,
-            'type'           => 'deadline_extension_decided',
-            'title'          => "Deadline Extension {$label}",
-            'message'        => "Your deadline extension for \"{$extensionRequest->task->title}\" was {$data['status']}.",
-            'reference_id'   => $extensionRequest->id,
-            'reference_type' => 'deadline_extension_request',
-        ]);
+        NotificationService::send(
+            $extensionRequest->requester_id,
+            'deadline_extension_decided',
+            "Deadline Extension {$label}",
+            "Your deadline extension for \"{$extensionRequest->task->title}\" was {$data['status']}.",
+            $extensionRequest->id,
+            'deadline_extension_request',
+        );
 
         return response()->json($extensionRequest);
     }

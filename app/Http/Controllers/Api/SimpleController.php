@@ -14,7 +14,7 @@ use App\Models\SopSegment;
 use App\Models\IssueReport;
 use App\Models\ReviewLink;
 use App\Models\Note;
-use App\Models\Notification;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class SimpleController extends Controller
@@ -60,14 +60,14 @@ class SimpleController extends Controller
         $leave->update($data);
 
         $label = $data['status'] === 'approved' ? 'Approved' : 'Rejected';
-        Notification::create([
-            'user_id'        => $leave->user_id,
-            'type'           => 'leave_decided',
-            'title'          => "Leave Application {$label}",
-            'message'        => "Your leave request ({$leave->start_date} – {$leave->end_date}) was {$data['status']}.",
-            'reference_id'   => $leave->id,
-            'reference_type' => 'leave_application',
-        ]);
+        NotificationService::send(
+            $leave->user_id,
+            'leave_decided',
+            "Leave Application {$label}",
+            "Your leave request ({$leave->start_date} – {$leave->end_date}) was {$data['status']}.",
+            $leave->id,
+            'leave_application',
+        );
 
         return response()->json($leave->load(['user', 'reviewer']));
     }
@@ -156,14 +156,14 @@ class SimpleController extends Controller
 
         if ($support->requester_id && $support->requester_id !== $request->user()->id) {
             $status = $data['status'] ?? $support->status;
-            Notification::create([
-                'user_id'        => $support->requester_id,
-                'type'           => 'support_updated',
-                'title'          => 'Support Request Updated',
-                'message'        => "Your technical support request \"{$support->title}\" is now {$status}.",
-                'reference_id'   => $support->id,
-                'reference_type' => 'technical_support_request',
-            ]);
+            NotificationService::send(
+                $support->requester_id,
+                'support_updated',
+                'Support Request Updated',
+                "Your technical support request \"{$support->title}\" is now {$status}.",
+                $support->id,
+                'technical_support_request',
+            );
         }
 
         return response()->json($support->load(['requester', 'assignedTo']));
@@ -216,14 +216,14 @@ class SimpleController extends Controller
 
         if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
             $status = $data['status'] ?? $complaint->status;
-            Notification::create([
-                'user_id'        => $complaint->submitter_id,
-                'type'           => 'complaint_updated',
-                'title'          => 'Complaint Updated',
-                'message'        => "Your complaint status has been updated to: {$status}.",
-                'reference_id'   => $complaint->id,
-                'reference_type' => 'complaint',
-            ]);
+            NotificationService::send(
+                $complaint->submitter_id,
+                'complaint_updated',
+                'Complaint Updated',
+                "Your complaint status has been updated to: {$status}.",
+                $complaint->id,
+                'complaint',
+            );
         }
 
         return response()->json($complaint);
@@ -270,14 +270,14 @@ class SimpleController extends Controller
 
         if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
             $status = $data['status'] ?? $complaint->status;
-            Notification::create([
-                'user_id'        => $complaint->submitter_id,
-                'type'           => 'staff_complaint_updated',
-                'title'          => 'Staff Complaint Updated',
-                'message'        => "Your staff complaint status has been updated to: {$status}.",
-                'reference_id'   => $complaint->id,
-                'reference_type' => 'staff_complaint',
-            ]);
+            NotificationService::send(
+                $complaint->submitter_id,
+                'staff_complaint_updated',
+                'Staff Complaint Updated',
+                "Your staff complaint status has been updated to: {$status}.",
+                $complaint->id,
+                'staff_complaint',
+            );
         }
 
         return response()->json($complaint);
@@ -319,14 +319,14 @@ class SimpleController extends Controller
         ]);
 
         if ($staffQuery->submitted_by && $staffQuery->submitted_by !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $staffQuery->submitted_by,
-                'type'           => 'query_answered',
-                'title'          => 'Query Answered',
-                'message'        => "Your query \"{$staffQuery->subject}\" has been answered.",
-                'reference_id'   => $staffQuery->id,
-                'reference_type' => 'staff_query',
-            ]);
+            NotificationService::send(
+                $staffQuery->submitted_by,
+                'query_answered',
+                'Query Answered',
+                "Your query \"{$staffQuery->subject}\" has been answered.",
+                $staffQuery->id,
+                'staff_query',
+            );
         }
 
         return response()->json($staffQuery);
@@ -473,14 +473,14 @@ class SimpleController extends Controller
         $link = ReviewLink::create($data);
 
         if (!empty($link->assigned_to) && $link->assigned_to !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $link->assigned_to,
-                'type'           => 'review_link_assigned',
-                'title'          => 'Review Link Assigned',
-                'message'        => "You have a new review link to review: \"{$link->title}\"",
-                'reference_id'   => $link->id,
-                'reference_type' => 'review_link',
-            ]);
+            NotificationService::send(
+                $link->assigned_to,
+                'review_link_assigned',
+                'Review Link Assigned',
+                "You have a new review link to review: \"{$link->title}\"",
+                $link->id,
+                'review_link',
+            );
         }
 
         return response()->json($link->load(['sender', 'assignee']), 201);
@@ -495,14 +495,14 @@ class SimpleController extends Controller
         ]);
 
         if ($reviewLink->sent_by && $reviewLink->sent_by !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $reviewLink->sent_by,
-                'type'           => 'review_link_reviewed',
-                'title'          => 'Review Link Reviewed',
-                'message'        => "Your review link \"{$reviewLink->title}\" has been reviewed.",
-                'reference_id'   => $reviewLink->id,
-                'reference_type' => 'review_link',
-            ]);
+            NotificationService::send(
+                $reviewLink->sent_by,
+                'review_link_reviewed',
+                'Review Link Reviewed',
+                "Your review link \"{$reviewLink->title}\" has been reviewed.",
+                $reviewLink->id,
+                'review_link',
+            );
         }
 
         return response()->json($reviewLink);
