@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoRead;
 use App\Models\MemoResponse;
-use App\Models\Notification;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
 class MemoController extends Controller
@@ -39,14 +39,14 @@ class MemoController extends Controller
 
         foreach ($memo->recipients as $recipientId) {
             if ($recipientId !== $request->user()->id) {
-                Notification::create([
-                    'user_id'        => $recipientId,
-                    'type'           => 'memo_received',
-                    'title'          => 'New Memo',
-                    'message'        => "You received a memo: \"{$memo->subject}\"",
-                    'reference_id'   => $memo->id,
-                    'reference_type' => 'memo',
-                ]);
+                NotificationService::send(
+                    $recipientId,
+                    'memo_received',
+                    'New Memo',
+                    "You received a memo: \"{$memo->subject}\"",
+                    $memo->id,
+                    'memo',
+                );
             }
         }
 
@@ -89,14 +89,14 @@ class MemoController extends Controller
         ]);
 
         if ($memo->sender_id !== $request->user()->id) {
-            Notification::create([
-                'user_id'        => $memo->sender_id,
-                'type'           => 'memo_response',
-                'title'          => 'Memo Response Received',
-                'message'        => "{$request->user()->name} responded to your memo: \"{$memo->subject}\"",
-                'reference_id'   => $memo->id,
-                'reference_type' => 'memo',
-            ]);
+            NotificationService::send(
+                $memo->sender_id,
+                'memo_response',
+                'Memo Response Received',
+                "{$request->user()->name} responded to your memo: \"{$memo->subject}\"",
+                $memo->id,
+                'memo',
+            );
         }
 
         return response()->json($response->load('user'), 201);
