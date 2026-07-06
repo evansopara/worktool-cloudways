@@ -9,7 +9,7 @@ class LeaveApplication extends Model
     protected $fillable = [
         'user_id', 'leave_type', 'reason', 'start_date', 'end_date',
         'total_days', 'proof_image_url', 'status', 'applied_at',
-        'reviewed_at', 'reviewed_by', 'review_comments',
+        'reviewed_at', 'reviewed_by', 'review_comment',
     ];
     protected $casts = [
         'start_date' => 'datetime', 'end_date' => 'datetime',
