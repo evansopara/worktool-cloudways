@@ -16,9 +16,12 @@ use App\Models\ReviewLink;
 use App\Models\Note;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class SimpleController extends Controller
 {
+    private const LEAVE_OF_ABSENCE_ANNUAL_CAP = 14;
+
     // ==================== LEAVE ====================
     public function leaveIndex(Request $request)
     {
@@ -35,13 +38,40 @@ class SimpleController extends Controller
     public function leaveStore(Request $request)
     {
         $data = $request->validate([
-            'leave_type' => 'required|string',
+            'leave_type' => 'required|string|in:day_off,leave_of_absence',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'reason' => 'nullable|string',
         ]);
+
+        $start = Carbon::parse($data['start_date']);
+        $end = Carbon::parse($data['end_date']);
+        $workingDays = 0;
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            if (!$d->isWeekend()) {
+                $workingDays++;
+            }
+        }
+
+        if ($data['leave_type'] === 'leave_of_absence') {
+            $year = $start->year;
+            $used = LeaveApplication::where('user_id', $request->user()->id)
+                ->where('leave_type', 'leave_of_absence')
+                ->where('status', '!=', 'rejected')
+                ->whereYear('start_date', $year)
+                ->sum('total_days');
+
+            if ($used + $workingDays > self::LEAVE_OF_ABSENCE_ANNUAL_CAP) {
+                $remaining = max(0, self::LEAVE_OF_ABSENCE_ANNUAL_CAP - $used);
+                return response()->json([
+                    'message' => "This request exceeds your Leave of Absence allowance for {$year}. You have {$remaining} of " . self::LEAVE_OF_ABSENCE_ANNUAL_CAP . " working days remaining.",
+                ], 422);
+            }
+        }
+
         $data['user_id'] = $request->user()->id;
         $data['status'] = 'pending';
+        $data['total_days'] = $workingDays;
 
         $leave = LeaveApplication::create($data);
         return response()->json($leave->load('user'), 201);
