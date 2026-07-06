@@ -50,6 +50,7 @@ class ProjectController extends Controller
         $memberIds = $data['member_ids'] ?? [];
         unset($data['member_ids']);
         $data['created_by'] = $request->user()->id;
+        $data['type'] = $data['category'];
 
         $project = Project::create($data);
 
