@@ -28,15 +28,20 @@ class NotificationService
         ?int $referenceId = null,
         ?string $referenceType = null,
     ): void {
-        // 1. Persist in-app notification
-        Notification::create([
-            'user_id'        => $userId,
-            'type'           => $type,
-            'title'          => $title,
-            'message'        => $message,
-            'reference_id'   => $referenceId,
-            'reference_type' => $referenceType,
-        ]);
+        // 1. Persist in-app notification (wrapped so a schema/DB issue here
+        // never breaks the primary action that triggered the notification)
+        try {
+            Notification::create([
+                'user_id'        => $userId,
+                'type'           => $type,
+                'title'          => $title,
+                'message'        => $message,
+                'reference_id'   => $referenceId,
+                'reference_type' => $referenceType,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("Failed to persist notification for user {$userId}: " . $e->getMessage());
+        }
 
         // 2. Send email (wrapped so a mail failure never breaks the API response)
         try {
