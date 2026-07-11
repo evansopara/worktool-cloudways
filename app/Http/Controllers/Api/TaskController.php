@@ -48,6 +48,7 @@ class TaskController extends Controller
                 $task->update(['status' => 'deadline_missed']);
             }
             $task->refresh();
+            $task->notifyDeadlineMissed();
         }
 
         return $task;

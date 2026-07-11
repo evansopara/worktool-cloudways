@@ -14,6 +14,7 @@ use App\Models\SopSegment;
 use App\Models\IssueReport;
 use App\Models\ReviewLink;
 use App\Models\Note;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
@@ -74,7 +75,23 @@ class SimpleController extends Controller
         $data['total_days'] = $workingDays;
 
         $leave = LeaveApplication::create($data);
-        return response()->json($leave->load('user'), 201);
+        $leave->load('user');
+
+        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])
+            ->where('id', '!=', $request->user()->id)
+            ->pluck('id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'leave_application',
+                'New Leave Application',
+                "{$leave->user->first_name} submitted a leave request ({$leave->start_date} – {$leave->end_date}).",
+                $leave->id,
+                'leave_application',
+            );
+        }
+
+        return response()->json($leave, 201);
     }
 
     public function leaveDecide(Request $request, LeaveApplication $leave)
@@ -171,7 +188,23 @@ class SimpleController extends Controller
         $data['status'] = 'open';
 
         $req = TechnicalSupportRequest::create($data);
-        return response()->json($req->load('requester'), 201);
+        $req->load('requester');
+
+        $recipientIds = User::where('specialization', 'technical_support')
+            ->where('id', '!=', $request->user()->id)
+            ->pluck('id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'support_request',
+                'New Support Request',
+                "{$req->requester->first_name} submitted a support request: \"{$req->title}\"",
+                $req->id,
+                'technical_support_request',
+            );
+        }
+
+        return response()->json($req, 201);
     }
 
     public function supportUpdate(Request $request, TechnicalSupportRequest $support)
@@ -230,6 +263,21 @@ class SimpleController extends Controller
         $data['status'] = 'open';
 
         $complaint = Complaint::create($data);
+
+        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead', 'customer_support_officer'])
+            ->where('id', '!=', $request->user()->id)
+            ->pluck('id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'client_complaint',
+                'New Client Complaint',
+                "A new client complaint was submitted by {$complaint->name}.",
+                $complaint->id,
+                'complaint',
+            );
+        }
+
         return response()->json($complaint, 201);
     }
 
@@ -337,7 +385,27 @@ class SimpleController extends Controller
         $data['status'] = 'open';
 
         $q = StaffQuery::create($data);
-        return response()->json($q->load('submitter'), 201);
+        $q->load('submitter');
+
+        if (!empty($q->assigned_to) && $q->assigned_to !== $request->user()->id) {
+            $recipientIds = collect([$q->assigned_to]);
+        } else {
+            $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])
+                ->where('id', '!=', $request->user()->id)
+                ->pluck('id');
+        }
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'staff_query',
+                'New Staff Query',
+                "{$q->submitter->first_name} submitted a query: \"{$q->subject}\"",
+                $q->id,
+                'staff_query',
+            );
+        }
+
+        return response()->json($q, 201);
     }
 
     public function queryRespond(Request $request, StaffQuery $staffQuery)
@@ -460,17 +528,46 @@ class SimpleController extends Controller
         $data['status'] = 'open';
 
         $issue = IssueReport::create($data);
-        return response()->json($issue->load('reporter'), 201);
+        $issue->load('reporter');
+
+        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])
+            ->where('id', '!=', $request->user()->id)
+            ->pluck('id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'issue_report',
+                'New Issue Report',
+                "{$issue->reporter->first_name} reported an issue: \"{$issue->title}\"",
+                $issue->id,
+                'issue_report',
+            );
+        }
+
+        return response()->json($issue, 201);
     }
 
     public function issueUpdate(Request $request, IssueReport $issue)
     {
-        $issue->update($request->validate([
+        $data = $request->validate([
             'status' => 'sometimes|string',
             'resolution' => 'nullable|string',
             'resolved_at' => 'nullable|date',
             'priority' => 'nullable|string',
-        ]));
+        ]);
+        $issue->update($data);
+
+        if (isset($data['status']) && $issue->reported_by && $issue->reported_by !== $request->user()->id) {
+            NotificationService::send(
+                $issue->reported_by,
+                'issue_report_updated',
+                'Issue Report Updated',
+                "Your issue report \"{$issue->title}\" is now {$data['status']}.",
+                $issue->id,
+                'issue_report',
+            );
+        }
+
         return response()->json($issue);
     }
 

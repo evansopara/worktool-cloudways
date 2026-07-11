@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\AppNotification;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -190,6 +193,38 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Self-service: a user submits their username and, if it matches an
+     * account with an email on file, gets sent a "set up password" link.
+     * Always responds with the same generic message so usernames can't be
+     * enumerated by watching for a different response.
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate(['username' => 'required|string']);
+
+        $user = User::where('username', $request->username)->first();
+
+        if ($user) {
+            $token = \Str::random(40);
+            $user->update([
+                'password_setup_token' => $token,
+                'must_set_password' => true,
+            ]);
+
+            $this->sendSetupPasswordEmail(
+                $user,
+                $token,
+                'Reset Your Password',
+                'You requested a password reset. Use the link below to set a new password.',
+            );
+        }
+
+        return response()->json([
+            'message' => 'If that username exists, a password setup link has been sent to the associated email address.',
+        ]);
+    }
+
     // Admin: list all users
     // public function users(Request $request)
     // {
@@ -218,6 +253,7 @@ class AuthController extends Controller
             'first_name' => 'required|string',
             'last_name' => 'required|string',
             'username' => 'required|string|unique:users',
+            'email' => 'required|email|unique:users',
             'role' => 'required|string',
             'specialization' => 'nullable|string',
             'department' => 'nullable|string',
@@ -232,6 +268,13 @@ class AuthController extends Controller
 
         $user = User::create($data);
 
+        $this->sendSetupPasswordEmail(
+            $user,
+            $token,
+            'Welcome to ' . config('app.name'),
+            "An account has been created for you by {$request->user()->name}. Set up your password to get started.",
+        );
+
         return response()->json(['user' => $user, 'setup_token' => $token], 201);
     }
 
@@ -243,6 +286,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'first_name' => 'sometimes|string',
             'last_name' => 'sometimes|string',
+            'email' => 'sometimes|nullable|email|unique:users,email,' . $user->id,
             'role' => 'sometimes|string',
             'specialization' => 'nullable|string',
             'department' => 'nullable|string',
@@ -265,6 +309,13 @@ class AuthController extends Controller
             'must_set_password' => true,
         ]);
 
+        $this->sendSetupPasswordEmail(
+            $user,
+            $token,
+            'Your Password Was Reset',
+            "An administrator reset your password. Set up a new password to regain access to your account.",
+        );
+
         return response()->json(['setup_token' => $token]);
     }
 
@@ -280,6 +331,24 @@ class AuthController extends Controller
     {
         if (!in_array($request->user()->role, $roles)) {
             abort(403, 'Unauthorized');
+        }
+    }
+
+    /**
+     * Email a user a link to set/reset their password. Wrapped so a mail
+     * failure never breaks account creation or the reset-token response.
+     */
+    private function sendSetupPasswordEmail(User $user, string $token, string $title, string $message): void
+    {
+        if (empty($user->email)) {
+            return;
+        }
+
+        try {
+            $setupUrl = rtrim(env('FRONTEND_URL', config('app.url')), '/') . '/setup-password?token=' . $token;
+            Mail::to($user->email)->send(new AppNotification($title, $message, $setupUrl, 'Set Up Password'));
+        } catch (\Throwable $e) {
+            Log::warning("Setup-password email failed for user {$user->id}: " . $e->getMessage());
         }
     }
 }
