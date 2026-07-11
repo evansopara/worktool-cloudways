@@ -69,6 +69,17 @@ class ProjectController extends Controller
             ['invitation_status' => 'accepted']
         );
 
+        if (!empty($project->manager_id) && $project->manager_id !== $request->user()->id) {
+            NotificationService::send(
+                $project->manager_id,
+                'project_assigned',
+                'Assigned as Project Manager',
+                "You have been assigned as manager of the project: \"{$project->name}\"",
+                $project->id,
+                'project',
+            );
+        }
+
         return response()->json($project->load(['client', 'manager', 'creator', 'members.user']), 201);
     }
 
@@ -92,7 +103,32 @@ class ProjectController extends Controller
             'end_date' => 'nullable|date',
         ]);
 
+        $oldManagerId = $project->manager_id;
+        $oldStatus = $project->status;
         $project->update($data);
+
+        if (isset($data['manager_id']) && $data['manager_id'] !== $oldManagerId && $data['manager_id'] !== $request->user()->id) {
+            NotificationService::send(
+                $data['manager_id'],
+                'project_assigned',
+                'Assigned as Project Manager',
+                "You have been assigned as manager of the project: \"{$project->name}\"",
+                $project->id,
+                'project',
+            );
+        }
+
+        if (isset($data['status']) && $data['status'] !== $oldStatus && $project->manager_id && $project->manager_id !== $request->user()->id) {
+            NotificationService::send(
+                $project->manager_id,
+                'project_status_changed',
+                'Project Status Updated',
+                "The status of project \"{$project->name}\" changed to {$data['status']}.",
+                $project->id,
+                'project',
+            );
+        }
+
         return response()->json($project->load(['client', 'manager']));
     }
 
@@ -198,13 +234,27 @@ class ProjectController extends Controller
 
     public function updateDeliverable(Request $request, Project $project, ProjectPlan $plan, Deliverable $deliverable)
     {
-        $deliverable->update($request->validate([
+        $data = $request->validate([
             'title' => 'sometimes|string',
             'description' => 'nullable|string',
             'assigned_to' => 'nullable|integer',
             'due_date' => 'nullable|date',
             'status' => 'nullable|string',
-        ]));
+        ]);
+        $oldAssignedTo = $deliverable->assigned_to;
+        $deliverable->update($data);
+
+        if (isset($data['assigned_to']) && $data['assigned_to'] !== $oldAssignedTo && $data['assigned_to'] !== $request->user()->id) {
+            NotificationService::send(
+                $data['assigned_to'],
+                'deliverable_assigned',
+                'Deliverable Assigned',
+                "You have been assigned the deliverable \"{$deliverable->title}\" on project \"{$project->name}\"",
+                $deliverable->id,
+                'deliverable',
+            );
+        }
+
         return response()->json($deliverable);
     }
 
@@ -231,6 +281,21 @@ class ProjectController extends Controller
         $data['uploaded_by'] = $request->user()->id;
 
         $resource = Resource::create($data);
+
+        $recipientIds = ProjectMember::where('project_id', $project->id)
+            ->where('user_id', '!=', $request->user()->id)
+            ->pluck('user_id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'resource_uploaded',
+                'New Project File',
+                "{$request->user()->name} uploaded a file to \"{$project->name}\": \"{$resource->name}\"",
+                $resource->id,
+                'resource',
+            );
+        }
+
         return response()->json($resource, 201);
     }
 

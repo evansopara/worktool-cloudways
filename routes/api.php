@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\SimpleController;
 // Public routes
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/setup-password', [AuthController::class, 'setupPassword']);
+Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
 
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {

@@ -40,6 +40,7 @@
                     } else {
                         $task->update(['status' => 'deadline_missed']);
                     }
+                    $task->notifyDeadlineMissed();
                     $count++;
                 }
 
