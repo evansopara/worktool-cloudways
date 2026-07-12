@@ -30,6 +30,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/users/{user}', [AuthController::class, 'updateUser']);
     Route::delete('/users/{user}', [AuthController::class, 'deleteUser']);
     Route::post('/users/{user}/reset-password-token', [AuthController::class, 'resetPasswordToken']);
+    Route::post('/users/{user}/deactivate', [AuthController::class, 'deactivateUser']);
+    Route::post('/users/{user}/activate', [AuthController::class, 'activateUser']);
 
     // Projects
     Route::get('/projects', [ProjectController::class, 'index']);

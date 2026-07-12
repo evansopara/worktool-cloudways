@@ -28,6 +28,12 @@ class NotificationService
         ?int $referenceId = null,
         ?string $referenceType = null,
     ): void {
+        // Deactivated users get no new in-app notifications and no emails.
+        $user = User::find($userId);
+        if (!$user || !$user->is_active) {
+            return;
+        }
+
         // 1. Persist in-app notification (wrapped so a schema/DB issue here
         // never breaks the primary action that triggered the notification)
         try {
@@ -45,8 +51,7 @@ class NotificationService
 
         // 2. Send email (wrapped so a mail failure never breaks the API response)
         try {
-            $user = User::find($userId);
-            if ($user && !empty($user->email)) {
+            if (!empty($user->email)) {
                 $dashboardUrl = rtrim(env('FRONTEND_URL', config('app.url')), '/') . '/dashboard';
                 Mail::to($user->email)
                     ->send(new AppNotification($title, $message, $dashboardUrl));
