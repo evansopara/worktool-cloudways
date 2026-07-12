@@ -28,6 +28,10 @@ class AuthController extends Controller
             ]);
         }
 
+        if (!$user->is_active) {
+            return response()->json(['message' => 'This account has been deactivated. Please contact an administrator.'], 403);
+        }
+
         if ($user->status === 'inactive') {
             return response()->json(['message' => 'Account is inactive.'], 403);
         }
@@ -237,10 +241,20 @@ class AuthController extends Controller
     {
         // Anyone authenticated can list users — needed for assignment dropdowns,
         // memo recipients, mentions, etc. Sensitive fields are hidden by the
-        // User model's $hidden array.
-        $users = User::where('is_active', 1)
-            ->orderBy('first_name', 'asc')
-            ->get();
+        // User model's $hidden array. Deactivated users are excluded here so
+        // they stay invisible everywhere this endpoint is used, EXCEPT for
+        // admin/team-lead management screens, which opt in with ?all=1 so
+        // they can still see and reactivate deactivated accounts.
+        $query = User::query();
+
+        $wantsAll = $request->boolean('all')
+            && in_array($request->user()->role, ['operations_manager', 'team_lead']);
+
+        if (!$wantsAll) {
+            $query->where('is_active', 1);
+        }
+
+        $users = $query->orderBy('first_name', 'asc')->get();
         return response()->json($users);
     }
 
@@ -327,6 +341,32 @@ class AuthController extends Controller
         return response()->json(['message' => 'User deleted.']);
     }
 
+    // Deactivate a user: blocks future logins and immediately revokes their
+    // active sessions. Team Lead accounts are protected from deactivation.
+    public function deactivateUser(Request $request, User $user)
+    {
+        $this->authorizeRole($request, ['operations_manager', 'team_lead']);
+
+        if ($user->role === 'team_lead') {
+            abort(403, 'Team Lead accounts cannot be deactivated.');
+        }
+
+        $user->update(['is_active' => false]);
+        $user->tokens()->delete();
+
+        return response()->json($user);
+    }
+
+    // Reactivate a previously deactivated user, restoring full access.
+    public function activateUser(Request $request, User $user)
+    {
+        $this->authorizeRole($request, ['operations_manager', 'team_lead']);
+
+        $user->update(['is_active' => true]);
+
+        return response()->json($user);
+    }
+
     private function authorizeRole(Request $request, array $roles)
     {
         if (!in_array($request->user()->role, $roles)) {
@@ -340,7 +380,7 @@ class AuthController extends Controller
      */
     private function sendSetupPasswordEmail(User $user, string $token, string $title, string $message): void
     {
-        if (empty($user->email)) {
+        if (empty($user->email) || !$user->is_active) {
             return;
         }
 

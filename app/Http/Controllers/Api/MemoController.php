@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoRead;
 use App\Models\MemoResponse;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
@@ -29,11 +30,20 @@ class MemoController extends Controller
         $data = $request->validate([
             'subject' => 'required|string',
             'content' => 'required|string',
-            'recipients' => 'required|array',
+            'type' => 'required|in:individual,general,department',
+            'department' => 'required_if:type,department|string',
+            'recipients' => 'required_unless:type,department|array',
             'recipients.*' => 'integer|exists:users,id',
         ]);
 
         $data['sender_id'] = $request->user()->id;
+
+        if ($data['type'] === 'department') {
+            $data['recipients'] = User::where('department', $data['department'])
+                ->where('id', '!=', $request->user()->id)
+                ->pluck('id')
+                ->toArray();
+        }
 
         $memo = Memo::create($data);
 
