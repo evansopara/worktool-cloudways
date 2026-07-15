@@ -362,7 +362,8 @@ class TaskController extends Controller
             'status' => 'required|in:approved,rejected',
             'decision_reason' => 'nullable|string',
             'approved_deadline' => 'nullable|date',
-            'approved_working_hours' => 'nullable|numeric',
+            'approved_working_hours' => 'nullable|integer|min:0',
+            'approved_working_minutes' => 'nullable|integer|min:0|max:59',
         ]);
         $data['decided_by'] = $request->user()->id;
         $data['decided_at'] = now();

@@ -9,7 +9,6 @@ use App\Models\ProjectPlan;
 use App\Models\Deliverable;
 use App\Models\Resource;
 use App\Models\ProjectBriefing;
-use App\Models\ClientSentiment;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 
@@ -319,27 +318,6 @@ class ProjectController extends Controller
             ['content' => $data['content'], 'created_by' => $request->user()->id, 'updated_by' => $request->user()->id]
         );
         return response()->json($briefing, 201);
-    }
-
-    // Client Sentiment
-    public function sentiments(Project $project)
-    {
-        return response()->json($project->sentiments ?? []);
-    }
-
-    public function storeSentiment(Request $request, Project $project)
-    {
-        $data = $request->validate([
-            'sentiment' => 'required|string',
-            'feedback' => 'nullable|string',
-            'client_id' => 'nullable|integer|exists:users,id',
-        ]);
-        $data['project_id'] = $project->id;
-        $data['recorded_by'] = $request->user()->id;
-        $data['recorded_at'] = now();
-
-        $sentiment = ClientSentiment::create($data);
-        return response()->json($sentiment, 201);
     }
 
     private function authorizeProjectAccess($user, Project $project)

@@ -64,8 +64,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/projects/{project}/briefing', [ProjectController::class, 'storeBriefing']);
 
     // Client sentiment
-    Route::get('/projects/{project}/sentiments', [ProjectController::class, 'sentiments']);
-    Route::post('/projects/{project}/sentiments', [ProjectController::class, 'storeSentiment']);
+    Route::get('/sentiments', [SimpleController::class, 'sentimentIndex']);
+    Route::post('/sentiments', [SimpleController::class, 'sentimentStore']);
 
     // Tasks
     Route::get('/tasks', [TaskController::class, 'index']);
@@ -148,6 +148,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/queries', [SimpleController::class, 'queryIndex']);
     Route::post('/queries', [SimpleController::class, 'queryStore']);
     Route::post('/queries/{staffQuery}/respond', [SimpleController::class, 'queryRespond']);
+    Route::delete('/queries/{staffQuery}', [SimpleController::class, 'queryDestroy']);
 
     // SOPs
     Route::get('/sops', [SimpleController::class, 'sopIndex']);
@@ -168,6 +169,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/review-links', [SimpleController::class, 'reviewLinkIndex']);
     Route::post('/review-links', [SimpleController::class, 'reviewLinkStore']);
     Route::post('/review-links/{reviewLink}/respond', [SimpleController::class, 'reviewLinkRespond']);
+    Route::delete('/review-links/{reviewLink}', [SimpleController::class, 'reviewLinkDestroy']);
 
     // Notes
     Route::get('/notes', [SimpleController::class, 'noteIndex']);

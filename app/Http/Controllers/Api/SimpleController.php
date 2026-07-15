@@ -14,9 +14,11 @@ use App\Models\SopSegment;
 use App\Models\IssueReport;
 use App\Models\ReviewLink;
 use App\Models\Note;
+use App\Models\ClientSentiment;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
 class SimpleController extends Controller
@@ -135,13 +137,29 @@ class SimpleController extends Controller
             'start_time' => 'required|date',
             'end_time' => 'required|date|after:start_time',
             'location' => 'nullable|string',
+            'meeting_link' => 'nullable|string',
             'participants' => 'nullable|array',
-            'type' => 'nullable|string',
+            'type' => 'required|in:one_on_one,team,marketing_meeting_call,general',
         ]);
         $data['scheduled_by'] = $request->user()->id;
 
         $booking = Booking::create($data);
-        return response()->json($booking->load('scheduler'), 201);
+        $booking->load('scheduler');
+
+        foreach ($booking->participants ?? [] as $participantId) {
+            if ($participantId !== $request->user()->id) {
+                NotificationService::send(
+                    $participantId,
+                    'booking_invite',
+                    'Meeting Invitation',
+                    "{$request->user()->first_name} {$request->user()->last_name} invited you to \"{$booking->title}\" on " . $booking->start_time->format('M j, Y \a\t g:i A'),
+                    $booking->id,
+                    'booking',
+                );
+            }
+        }
+
+        return response()->json($booking, 201);
     }
 
     public function bookingUpdate(Request $request, Booking $booking)
@@ -152,7 +170,9 @@ class SimpleController extends Controller
             'start_time' => 'sometimes|date',
             'end_time' => 'sometimes|date',
             'location' => 'nullable|string',
+            'meeting_link' => 'nullable|string',
             'participants' => 'nullable|array',
+            'type' => 'sometimes|in:one_on_one,team,marketing_meeting_call,general',
         ]));
         return response()->json($booking);
     }
@@ -238,9 +258,7 @@ class SimpleController extends Controller
         $user = $request->user();
         $query = Complaint::query();
 
-        if ($user->role === 'client') {
-            $query->where('submitter_id', $user->id);
-        } elseif (!in_array($user->role, ['operations_manager', 'team_lead', 'customer_support_officer'])) {
+        if ($user->role !== 'operations_manager' && $user->role !== 'team_lead') {
             $query->where('submitter_id', $user->id);
         }
 
@@ -249,6 +267,10 @@ class SimpleController extends Controller
 
     public function complaintStore(Request $request)
     {
+        if ($request->user()->role !== 'client') {
+            abort(403);
+        }
+
         $data = $request->validate([
             'name' => 'required|string',
             'email' => 'required|email',
@@ -260,13 +282,11 @@ class SimpleController extends Controller
             'screenshot_url' => 'nullable|string',
         ]);
         $data['submitter_id'] = $request->user()->id;
-        $data['status'] = 'open';
+        $data['status'] = 'pending';
 
         $complaint = Complaint::create($data);
 
-        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead', 'customer_support_officer'])
-            ->where('id', '!=', $request->user()->id)
-            ->pluck('id');
+        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])->pluck('id');
         foreach ($recipientIds as $recipientId) {
             NotificationService::send(
                 $recipientId,
@@ -283,13 +303,15 @@ class SimpleController extends Controller
 
     public function complaintUpdate(Request $request, Complaint $complaint)
     {
-        $this->authorizeRole($request, ['operations_manager', 'team_lead', 'customer_support_officer']);
+        $this->authorizeRole($request, ['operations_manager', 'team_lead']);
         $data = $request->validate([
-            'status' => 'sometimes|string',
+            'status' => 'sometimes|in:pending,reviewed,resolved',
             'review_comments' => 'nullable|string',
-            'reviewed_by' => 'nullable|integer',
-            'reviewed_at' => 'nullable|date',
         ]);
+        if (isset($data['status'])) {
+            $data['reviewed_by'] = $request->user()->id;
+            $data['reviewed_at'] = now();
+        }
         $complaint->update($data);
 
         if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
@@ -322,6 +344,10 @@ class SimpleController extends Controller
 
     public function staffComplaintStore(Request $request)
     {
+        if (in_array($request->user()->role, ['operations_manager', 'team_lead', 'client'])) {
+            abort(403);
+        }
+
         $data = $request->validate([
             'name' => 'required|string',
             'email' => 'required|email',
@@ -330,9 +356,22 @@ class SimpleController extends Controller
             'screenshot_url' => 'nullable|string',
         ]);
         $data['submitter_id'] = $request->user()->id;
-        $data['status'] = 'open';
+        $data['status'] = 'pending';
 
         $complaint = StaffComplaint::create($data);
+
+        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])->pluck('id');
+        foreach ($recipientIds as $recipientId) {
+            NotificationService::send(
+                $recipientId,
+                'staff_complaint',
+                'New Staff Complaint',
+                "{$complaint->name} submitted a staff complaint.",
+                $complaint->id,
+                'staff_complaint',
+            );
+        }
+
         return response()->json($complaint, 201);
     }
 
@@ -340,10 +379,12 @@ class SimpleController extends Controller
     {
         $this->authorizeRole($request, ['operations_manager', 'team_lead']);
         $data = $request->validate([
-            'status' => 'sometimes|string',
+            'status' => 'sometimes|in:pending,reviewed,resolved',
             'review_comments' => 'nullable|string',
-            'reviewed_at' => 'nullable|date',
         ]);
+        if (isset($data['status'])) {
+            $data['reviewed_at'] = now();
+        }
         $complaint->update($data);
 
         if ($complaint->submitter_id && $complaint->submitter_id !== $request->user()->id) {
@@ -361,73 +402,145 @@ class SimpleController extends Controller
         return response()->json($complaint);
     }
 
-    // ==================== STAFF QUERIES ====================
-    public function queryIndex(Request $request)
+    // ==================== CLIENT SENTIMENT ====================
+    // Clients self-report a general weekly satisfied/dissatisfied check-in
+    // (optionally flagged for follow-up). Only team lead/ops manager review.
+    public function sentimentIndex(Request $request)
     {
         $user = $request->user();
-        $query = StaffQuery::with(['submitter', 'assignee']);
+        $query = ClientSentiment::with('client');
 
-        if (in_array($user->role, ['staff', 'intern'])) {
-            $query->where('submitted_by', $user->id);
+        if ($user->role !== 'operations_manager' && $user->role !== 'team_lead') {
+            $query->where('client_id', $user->id);
         }
+
+        return response()->json($query->orderBy('recorded_at', 'desc')->get());
+    }
+
+    public function sentimentStore(Request $request)
+    {
+        if ($request->user()->role !== 'client') {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'sentiment' => 'required|in:satisfied,dissatisfied',
+            'feedback' => 'nullable|string',
+            'is_flagged' => 'nullable|boolean',
+        ]);
+        $data['is_flagged'] = $data['is_flagged'] ?? false;
+        $data['client_id'] = $request->user()->id;
+        $data['recorded_by'] = $request->user()->id;
+        $data['recorded_at'] = now();
+
+        $sentiment = ClientSentiment::create($data);
+
+        if ($sentiment->is_flagged) {
+            $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])->pluck('id');
+            foreach ($recipientIds as $recipientId) {
+                NotificationService::send(
+                    $recipientId,
+                    'client_sentiment_flagged',
+                    'Client Feedback Flagged',
+                    "{$request->user()->first_name} flagged their feedback for follow-up.",
+                    $sentiment->id,
+                    'client_sentiment',
+                );
+            }
+        }
+
+        return response()->json($sentiment, 201);
+    }
+
+    // ==================== STAFF QUERIES ====================
+    // Managers (operations_manager, team_lead) issue a query to a specific staff
+    // member, who must then acknowledge it or contest it with a reason.
+    // Every non-client role can see every query, not just their own.
+    private const QUERY_ISSUER_ROLES = ['operations_manager', 'team_lead'];
+    private const QUERY_TARGET_ROLES = ['project_manager', 'staff', 'intern', 'customer_support_officer'];
+
+    public function queryIndex(Request $request)
+    {
+        if ($request->user()->role === 'client') {
+            abort(403);
+        }
+
+        $query = StaffQuery::with(['submitter', 'assignee']);
 
         return response()->json($query->orderBy('created_at', 'desc')->get());
     }
 
     public function queryStore(Request $request)
     {
+        if (!in_array($request->user()->role, self::QUERY_ISSUER_ROLES)) {
+            abort(403);
+        }
+
         $data = $request->validate([
             'subject' => 'required|string',
             'message' => 'required|string',
-            'assigned_to' => 'nullable|integer|exists:users,id',
+            'assigned_to' => ['required', 'integer', Rule::exists('users', 'id')->where(
+                fn ($q) => $q->whereIn('role', self::QUERY_TARGET_ROLES)
+            )],
         ]);
         $data['submitted_by'] = $request->user()->id;
-        $data['status'] = 'open';
+        $data['status'] = 'pending';
 
         $q = StaffQuery::create($data);
-        $q->load('submitter');
+        $q->load(['submitter', 'assignee']);
 
-        if (!empty($q->assigned_to) && $q->assigned_to !== $request->user()->id) {
-            $recipientIds = collect([$q->assigned_to]);
-        } else {
-            $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])
-                ->where('id', '!=', $request->user()->id)
-                ->pluck('id');
-        }
-        foreach ($recipientIds as $recipientId) {
-            NotificationService::send(
-                $recipientId,
-                'staff_query',
-                'New Staff Query',
-                "{$q->submitter->first_name} submitted a query: \"{$q->subject}\"",
-                $q->id,
-                'staff_query',
-            );
-        }
+        NotificationService::send(
+            $q->assigned_to,
+            'staff_query_issued',
+            'You Have Been Issued a Query',
+            "{$q->submitter->first_name} issued you a query: \"{$q->subject}\"",
+            $q->id,
+            'staff_query',
+        );
 
         return response()->json($q, 201);
     }
 
     public function queryRespond(Request $request, StaffQuery $staffQuery)
     {
+        if ($staffQuery->assigned_to !== $request->user()->id) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'status' => 'required|in:acknowledged,contested',
+            'response' => 'required_if:status,contested|nullable|string',
+        ]);
+
         $staffQuery->update([
-            'response' => $request->validate(['response' => 'required|string'])['response'],
+            'status' => $data['status'],
+            'response' => $data['response'] ?? null,
             'responded_at' => now(),
-            'status' => 'resolved',
         ]);
 
         if ($staffQuery->submitted_by && $staffQuery->submitted_by !== $request->user()->id) {
+            $label = $data['status'] === 'acknowledged' ? 'acknowledged' : 'contested';
             NotificationService::send(
                 $staffQuery->submitted_by,
-                'query_answered',
-                'Query Answered',
-                "Your query \"{$staffQuery->subject}\" has been answered.",
+                "query_{$data['status']}",
+                'Query ' . ucfirst($label),
+                "Your query \"{$staffQuery->subject}\" has been {$label}.",
                 $staffQuery->id,
                 'staff_query',
             );
         }
 
         return response()->json($staffQuery);
+    }
+
+    public function queryDestroy(Request $request, StaffQuery $staffQuery)
+    {
+        if ($staffQuery->submitted_by !== $request->user()->id && !in_array($request->user()->role, ['operations_manager', 'team_lead'])) {
+            abort(403);
+        }
+
+        $staffQuery->delete();
+        return response()->json(['message' => 'Query deleted.']);
     }
 
     // ==================== SOPs ====================
@@ -502,12 +615,19 @@ class SimpleController extends Controller
     }
 
     // ==================== ISSUE REPORTS ====================
+    // Anyone can submit an app issue/suggestion. Only staff whose specialization
+    // is technical_support manage the queue (see all reports, change status, comment).
+    private static function isTechSupport(User $user): bool
+    {
+        return $user->role === 'staff' && $user->specialization === 'technical_support';
+    }
+
     public function issueIndex(Request $request)
     {
         $user = $request->user();
         $query = IssueReport::with(['reporter', 'project', 'task']);
 
-        if (in_array($user->role, ['staff', 'intern'])) {
+        if (!self::isTechSupport($user)) {
             $query->where('reported_by', $user->id);
         }
 
@@ -519,18 +639,21 @@ class SimpleController extends Controller
         $data = $request->validate([
             'title' => 'required|string',
             'description' => 'required|string',
+            'category' => 'nullable|string|in:bug,feature_request,improvement,other',
+            'suggestions' => 'nullable|string',
             'project_id' => 'nullable|integer|exists:projects,id',
             'task_id' => 'nullable|integer|exists:tasks,id',
             'priority' => 'nullable|string',
             'screenshot_url' => 'nullable|string',
         ]);
         $data['reported_by'] = $request->user()->id;
-        $data['status'] = 'open';
+        $data['status'] = 'pending';
 
         $issue = IssueReport::create($data);
         $issue->load('reporter');
 
-        $recipientIds = User::whereIn('role', ['operations_manager', 'team_lead'])
+        $recipientIds = User::where('role', 'staff')
+            ->where('specialization', 'technical_support')
             ->where('id', '!=', $request->user()->id)
             ->pluck('id');
         foreach ($recipientIds as $recipientId) {
@@ -549,12 +672,20 @@ class SimpleController extends Controller
 
     public function issueUpdate(Request $request, IssueReport $issue)
     {
+        if (!self::isTechSupport($request->user())) {
+            abort(403);
+        }
+
         $data = $request->validate([
-            'status' => 'sometimes|string',
+            'status' => 'sometimes|in:pending,reviewing,resolved,closed',
             'resolution' => 'nullable|string',
-            'resolved_at' => 'nullable|date',
             'priority' => 'nullable|string',
         ]);
+
+        if (($data['status'] ?? null) === 'resolved' && $issue->status !== 'resolved') {
+            $data['resolved_at'] = now();
+        }
+
         $issue->update($data);
 
         if (isset($data['status']) && $issue->reported_by && $issue->reported_by !== $request->user()->id) {
@@ -615,24 +746,40 @@ class SimpleController extends Controller
 
     public function reviewLinkRespond(Request $request, ReviewLink $reviewLink)
     {
+        $data = $request->validate([
+            'status' => 'required|in:approved,not_approved',
+            'review_comment' => 'nullable|string',
+        ]);
+
         $reviewLink->update([
-            'status' => 'reviewed',
-            'review_comment' => $request->validate(['review_comment' => 'nullable|string'])['review_comment'] ?? null,
+            'status' => $data['status'],
+            'review_comment' => $data['review_comment'] ?? null,
             'reviewed_at' => now(),
         ]);
 
         if ($reviewLink->sent_by && $reviewLink->sent_by !== $request->user()->id) {
+            $label = $data['status'] === 'approved' ? 'approved' : 'marked as not approved';
             NotificationService::send(
                 $reviewLink->sent_by,
                 'review_link_reviewed',
                 'Review Link Reviewed',
-                "Your review link \"{$reviewLink->title}\" has been reviewed.",
+                "Your review link \"{$reviewLink->title}\" has been {$label}.",
                 $reviewLink->id,
                 'review_link',
             );
         }
 
         return response()->json($reviewLink);
+    }
+
+    public function reviewLinkDestroy(Request $request, ReviewLink $reviewLink)
+    {
+        if ($reviewLink->sent_by !== $request->user()->id && !in_array($request->user()->role, ['operations_manager', 'team_lead'])) {
+            abort(403);
+        }
+
+        $reviewLink->delete();
+        return response()->json(['message' => 'Review link deleted.']);
     }
 
     // ==================== NOTES ====================

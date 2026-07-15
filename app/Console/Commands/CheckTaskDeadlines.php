@@ -24,11 +24,11 @@
                     if ($task->is_timer_running && $task->timer_start_time) {
                         $elapsed = (int) Carbon::parse($task->timer_start_time)->diffInSeconds(now());
                         $session = TaskSession::where('task_id', $task->id)
-                            ->whereNull('end_time')
+                            ->whereNull('ended_at')
                             ->latest()
                             ->first();
                         if ($session) {
-                            $session->update(['end_time' => now(), 'duration' => $elapsed]);
+                            $session->update(['ended_at' => now(), 'duration_seconds' => $elapsed]);
                         }
                         $task->update([
                             'is_timer_running' => false,
