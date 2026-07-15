@@ -67,12 +67,12 @@ class MemoController extends Controller
     {
         $userId = $request->user()->id;
 
-        // Mark as read if recipient
+        // Mark as read (and refresh read_at so newer replies can be detected as unread)
         if (in_array($userId, $memo->recipients ?? [])) {
-            MemoRead::firstOrCreate([
-                'memo_id' => $memo->id,
-                'user_id' => $userId,
-            ]);
+            MemoRead::updateOrCreate(
+                ['memo_id' => $memo->id, 'user_id' => $userId],
+                ['read_at' => now()],
+            );
         }
 
         return response()->json($memo->load(['sender', 'reads', 'responses.user']));

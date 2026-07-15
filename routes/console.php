@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Schedule;
 
 
 Schedule::command('tasks:check-deadlines')->everyMinute();
+Schedule::command('bookings:notify')->everyMinute();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
