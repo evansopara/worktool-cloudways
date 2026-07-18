@@ -49,15 +49,19 @@ class NotificationService
             Log::error("Failed to persist notification for user {$userId}: " . $e->getMessage());
         }
 
+        $dashboardUrl = rtrim(env('FRONTEND_URL', config('app.url')), '/') . '/dashboard';
+
         // 2. Send email (wrapped so a mail failure never breaks the API response)
         try {
             if (!empty($user->email)) {
-                $dashboardUrl = rtrim(env('FRONTEND_URL', config('app.url')), '/') . '/dashboard';
                 Mail::to($user->email)
                     ->send(new AppNotification($title, $message, $dashboardUrl));
             }
         } catch (\Throwable $e) {
             Log::warning("Notification email failed for user {$userId}: " . $e->getMessage());
         }
+
+        // 3. Send a push notification (no-ops if OneSignal isn't configured)
+        OneSignalService::sendToUser($userId, $title, $message, $dashboardUrl);
     }
 }

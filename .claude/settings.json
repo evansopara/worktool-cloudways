@@ -2,13 +2,17 @@
   "permissions": {
     "allow": [
       "Read(//c/Users/HP/Documents/GitHub/frontend/**)",
-      "Bash(rm \"/c/Users/HP/Documents/GitHub/frontend/src/app/dashboard/projects/[id]/ProjectDetailClient.tsx\")"
+      "Bash(rm \"/c/Users/HP/Documents/GitHub/frontend/src/app/dashboard/projects/[id]/ProjectDetailClient.tsx\")",
+      "Bash(php -l app/Services/OneSignalService.php)",
+      "Bash(php -l app/Services/NotificationService.php)",
+      "Bash(php -l config/services.php)"
     ],
     "additionalDirectories": [
       "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\components\\layout",
       "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\app\\dashboard\\admin",
       "C:\\Users\\HP\\Documents\\GitHub\\frontend",
-      "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\app\\dashboard\\projects\\[id]"
+      "C:\\Users\\HP\\Documents\\GitHub\\frontend\\src\\app\\dashboard\\projects\\[id]",
+      "c:\\Users\\HP\\Documents\\GitHub\\frontend\\out"
     ]
   }
 }
