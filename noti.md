@@ -1,4 +1,4 @@
-# All App Notifications
+# All App Notifications2
 
 ## In-App Notifications (Stored in Database + OneSignal Push)
 
