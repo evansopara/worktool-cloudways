@@ -176,4 +176,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notes', [SimpleController::class, 'noteStore']);
     Route::put('/notes/{note}', [SimpleController::class, 'noteUpdate']);
     Route::delete('/notes/{note}', [SimpleController::class, 'noteDestroy']);
+
+    // KPI report
+    Route::get('/departments', [\App\Http\Controllers\Api\KpiReportController::class, 'departments']);
+    Route::get('/kpi-report/productivity', [\App\Http\Controllers\Api\KpiReportController::class, 'productivity']);
 });
