@@ -59,11 +59,11 @@ class TaskController extends Controller
         $user = $request->user();
         $query = Task::with(['project', 'assignee', 'assigner']);
 
+        // Operations managers, team leads, project managers, and customer support
+        // officers see all tasks regardless of project membership, so they can check
+        // a user's existing workload before assigning a new task.
         if (in_array($user->role, ['staff', 'intern'])) {
             $query->where('assignee_id', $user->id);
-        } elseif ($user->role === 'project_manager') {
-            $query->whereHas('project', fn($q) => $q->where('manager_id', $user->id))
-                  ->orWhere('assigned_by', $user->id);
         }
 
         if ($request->project_id) $query->where('project_id', $request->project_id);
@@ -144,6 +144,16 @@ class TaskController extends Controller
             $data['timer_stopped_at'] = now();
             $data['submitted_at']     = now();
             $data['submitted_by']     = $request->user()->id;
+        }
+
+        // If this task was auto-marked deadline_missed and the edit pushes the
+        // deadline back into the future (or clears it) without the caller
+        // explicitly picking a different status, restore it to an active status.
+        if ($task->status === 'deadline_missed' && ($data['status'] ?? $task->status) === 'deadline_missed') {
+            $newDeadline = array_key_exists('deadline', $data) ? $data['deadline'] : $task->deadline;
+            if (!$newDeadline || Carbon::parse($newDeadline)->isFuture()) {
+                $data['status'] = 'todo';
+            }
         }
 
         $oldStatus = $task->status;

@@ -150,7 +150,7 @@ class KpiReportController extends Controller
             }
 
             $taskIds = $sessions->pluck('task_id')->unique();
-            $tasks = Task::whereIn('id', $taskIds)->get(['id', 'title', 'working_hours', 'working_minutes']);
+            $tasks = Task::whereIn('id', $taskIds)->get(['id', 'title', 'working_hours', 'working_minutes', 'status']);
 
             $taskBreakdown = [];
             $totalEstMinutes = 0;
@@ -163,6 +163,7 @@ class KpiReportController extends Controller
 
                 $taskBreakdown[] = [
                     'title' => $task->title,
+                    'status' => $task->status,
                     'estimated_minutes' => $estMinutes,
                     'actual_minutes' => $actMinutes,
                     'percentage' => $percentage,
