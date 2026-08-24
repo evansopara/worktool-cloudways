@@ -173,15 +173,29 @@ class KpiReportController extends Controller
                 $chart[] = ['date' => $dateStr, 'hours' => round($totalSeconds / 3600, 2)];
             }
 
-            $taskIds = $sessions->pluck('task_id')->unique();
-            $tasks = Task::whereIn('id', $taskIds)->get(['id', 'title', 'working_hours', 'working_minutes', 'status']);
+            // The task list (Task Efficiency Breakdown) is driven by assignment, not
+            // by whether time happened to be logged in this exact window: every task
+            // assigned to this employee whose start_date falls in the selected period
+            // shows up, even if no timer was ever started on it. Actual time reflects
+            // the task's full lifetime effort (its sessions aren't date-scoped here),
+            // since estimated_minutes is likewise a fixed property of the task.
+            $assignedTasks = Task::where('assignee_id', $employeeId)
+                ->whereBetween('start_date', [$from, $to->copy()->endOfDay()])
+                ->get(['id', 'title', 'status', 'working_hours', 'working_minutes', 'time_spent']);
+
+            $sessionsByTaskId = TaskSession::where('user_id', $employeeId)
+                ->whereIn('task_id', $assignedTasks->pluck('id'))
+                ->get(['id', 'task_id', 'duration_seconds'])
+                ->groupBy('task_id');
 
             $taskBreakdown = [];
             $totalEstMinutes = 0;
             $totalActMinutes = 0;
-            foreach ($tasks as $task) {
+            foreach ($assignedTasks as $task) {
                 $estMinutes = ((int) ($task->working_hours ?? 0)) * 60 + (int) ($task->working_minutes ?? 0);
-                $actSeconds = $effectiveSeconds($sessions->where('task_id', $task->id));
+
+                $recorded = (int) $sessionsByTaskId->get($task->id, collect())->sum('duration_seconds');
+                $actSeconds = $recorded > 0 ? $recorded : (int) ($task->time_spent ?? 0);
                 $actMinutes = (int) round($actSeconds / 60);
                 $percentage = $estMinutes > 0 ? round(($actMinutes / $estMinutes) * 100) : 0;
 
