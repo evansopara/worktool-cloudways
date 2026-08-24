@@ -125,8 +125,32 @@ class KpiReportController extends Controller
 
             $sessions = TaskSession::where('user_id', $employeeId)
                 ->whereBetween('started_at', [$from, $to->copy()->endOfDay()])
-                ->with('task:id,title,working_hours,working_minutes')
+                ->with('task:id,title,working_hours,working_minutes,status,time_spent')
                 ->get();
+
+            // Sessions created before `duration_seconds` was reliably tracked have it
+            // NULL, even though the task itself accrued real time (tasks.time_spent).
+            // When a task's in-range sessions sum to nothing, fall back to spreading
+            // its lifetime time_spent evenly across those sessions — an approximation,
+            // but far more honest than reporting zero for real work that happened.
+            $effectiveDurations = [];
+            foreach ($sessions->groupBy('task_id') as $taskSessions) {
+                $recorded = (int) $taskSessions->sum('duration_seconds');
+                if ($recorded > 0) {
+                    foreach ($taskSessions as $s) {
+                        $effectiveDurations[$s->id] = (int) ($s->duration_seconds ?? 0);
+                    }
+                    continue;
+                }
+
+                $fallbackTotal = (int) ($taskSessions->first()->task?->time_spent ?? 0);
+                $count = $taskSessions->count();
+                foreach ($taskSessions as $s) {
+                    $effectiveDurations[$s->id] = $count > 0 ? intdiv($fallbackTotal, $count) : 0;
+                }
+            }
+            $effectiveSeconds = fn ($sessionsCollection) =>
+                (int) $sessionsCollection->sum(fn ($s) => $effectiveDurations[$s->id] ?? 0);
 
             $sessionsByDate = $sessions->groupBy(fn ($s) => Carbon::parse($s->started_at)->toDateString());
 
@@ -135,7 +159,7 @@ class KpiReportController extends Controller
             foreach (CarbonPeriod::create($from, $to) as $day) {
                 $dateStr = $day->toDateString();
                 $daySessions = $sessionsByDate->get($dateStr, collect());
-                $totalSeconds = (int) $daySessions->sum('duration_seconds');
+                $totalSeconds = $effectiveSeconds($daySessions);
                 $taskTitles = $daySessions->pluck('task.title')->filter()->unique()->values();
 
                 $status = $totalSeconds >= 4 * 3600 ? 'good' : ($totalSeconds >= 2 * 3600 ? 'fair' : 'poor');
@@ -157,7 +181,7 @@ class KpiReportController extends Controller
             $totalActMinutes = 0;
             foreach ($tasks as $task) {
                 $estMinutes = ((int) ($task->working_hours ?? 0)) * 60 + (int) ($task->working_minutes ?? 0);
-                $actSeconds = (int) $sessions->where('task_id', $task->id)->sum('duration_seconds');
+                $actSeconds = $effectiveSeconds($sessions->where('task_id', $task->id));
                 $actMinutes = (int) round($actSeconds / 60);
                 $percentage = $estMinutes > 0 ? round(($actMinutes / $estMinutes) * 100) : 0;
 
