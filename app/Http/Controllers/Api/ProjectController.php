@@ -38,10 +38,12 @@ class ProjectController extends Controller
             'description' => 'nullable|string',
             'category' => 'required|string|in:website_development,dpl_outright,dpl_partnership,direct_marketing,support_maintenance',
             'client_id' => 'nullable|integer',
-            'status' => 'nullable|string|in:active,inactive,pending',
+            'status' => 'nullable|string|in:active,inactive,pending,completed',
             'progress' => 'nullable|integer|min:0|max:100',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
+            'domain_registered_at' => 'nullable|date',
+            'domain_expires_at' => 'nullable|date',
             'member_ids' => 'nullable|array',
             'member_ids.*' => 'integer',
         ]);
@@ -96,14 +98,23 @@ class ProjectController extends Controller
             'category' => 'sometimes|string|in:website_development,dpl_outright,dpl_partnership,direct_marketing,support_maintenance',
             'client_id' => 'nullable|integer',
             'manager_id' => 'nullable|integer',
-            'status' => 'nullable|string|in:active,inactive,pending',
+            'status' => 'nullable|string|in:active,inactive,pending,completed',
             'progress' => 'nullable|integer|min:0|max:100',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
+            'domain_registered_at' => 'nullable|date',
+            'domain_expires_at' => 'nullable|date',
         ]);
 
         $oldManagerId = $project->manager_id;
         $oldStatus = $project->status;
+        $oldDomainExpiresAt = $project->domain_expires_at?->toDateString();
+
+        // Domain expiry date changed: allow the expiry check command to notify again.
+        if (array_key_exists('domain_expires_at', $data) && $data['domain_expires_at'] !== $oldDomainExpiresAt) {
+            $data['domain_expiry_notified_at'] = null;
+        }
+
         $project->update($data);
 
         if (isset($data['manager_id']) && $data['manager_id'] !== $oldManagerId && $data['manager_id'] !== $request->user()->id) {
