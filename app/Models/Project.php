@@ -9,9 +9,16 @@ class Project extends Model
     protected $fillable = [
         'name', 'description', 'category', 'type', 'status',
         'client_id', 'manager_id', 'created_by', 'progress', 'start_date', 'end_date',
+        'domain_registered_at', 'domain_expires_at', 'domain_expiry_notified_at',
     ];
 
-    protected $casts = ['start_date' => 'datetime', 'end_date' => 'datetime'];
+    protected $casts = [
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
+        'domain_registered_at' => 'date:Y-m-d',
+        'domain_expires_at' => 'date:Y-m-d',
+        'domain_expiry_notified_at' => 'datetime',
+    ];
 
     public function client() { return $this->belongsTo(User::class, 'client_id'); }
     public function manager() { return $this->belongsTo(User::class, 'manager_id'); }
